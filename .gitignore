@@ -1,0 +1,6 @@
+.DS_Store
+*.zip
+.build/
+xcuserdata/
+DerivedData/
+ForceBridge.swiftpm/.swiftpm/xcode/

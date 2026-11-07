@@ -11,7 +11,7 @@
 Проект оформлен как пакет приложения Swift Playgrounds (`ForceBridge.swiftpm`) и открывается двумя способами.
 
 **iPad или Mac — Swift Playgrounds 4.4 и новее**
-1. Перенесите папку `ForceBridge.swiftpm` (или архив `ForceBridge.swiftpm.zip`, распакованный на устройстве) в iCloud Drive / «Файлы».
+1. Скачайте репозиторий (*Code → Download ZIP*), распакуйте и перенесите папку `ForceBridge.swiftpm` в iCloud Drive / «Файлы».
 2. Откройте её в Swift Playgrounds и нажмите ▶︎.
 
 **Mac — Xcode 15 и новее**

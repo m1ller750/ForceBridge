@@ -104,7 +104,7 @@ struct CardRow: View {
                     HStack(spacing: 8) {
                         TrussGlyph(states: Array(repeating: false, count: min(card.roles.count, 5)))
                             .frame(width: CGFloat(min(card.roles.count, 5)) * 9 + 9, height: 13)
-                        Text("Ищут: " + card.roles.joined(separator: ", "))
+                        Text(card.kind.rolesPrefix + ": " + card.roles.joined(separator: ", "))
                             .font(Typo.footnote)
                             .foregroundStyle(Palette.ink)
                             .lineLimit(1)

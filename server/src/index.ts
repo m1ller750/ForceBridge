@@ -591,6 +591,11 @@ function aiErrorMessage(error: unknown): string {
 // ---------------------------------------------------------------------------
 // ИИ: категории
 // ---------------------------------------------------------------------------
+/** В объявлении «Ищу команду» в ролях автор пишет, чем поможет сам, а не кого ищет. */
+function rolesLabel(kind: string): string {
+  return kind === "join" ? "Автор сам предлагает команде" : "Кого ищут";
+}
+
 async function classifyText(env: Env, card: any): Promise<string[]> {
   const list = CATEGORIES.map((c) => `- ${c.key}: ${c.title} (${c.grp === "format" ? "формат" : "область"})`).join("\n");
   const system =
@@ -605,7 +610,7 @@ async function classifyText(env: Env, card: any): Promise<string[]> {
     `Тип: ${KIND_TITLES[card.kind] ?? card.kind}\n` +
     `Заголовок: ${card.title}\n` +
     `Событие: ${card.event_name || "—"}\n` +
-    `Кого ищут: ${parseList(card.roles).join(", ") || "—"}\n` +
+    `${rolesLabel(card.kind)}: ${parseList(card.roles).join(", ") || "—"}\n` +
     `Описание: ${String(card.description).slice(0, 2000)}`;
   const out = await groqJSON(env, system, user, 1200);
   const raw: unknown[] = Array.isArray(out?.categories) ? out.categories : [];
@@ -702,7 +707,7 @@ async function scoreCards(env: Env, profile: any, cards: any[]) {
       [
         `[${i + 1}] ${KIND_TITLES[c.kind] ?? c.kind}: ${c.title}`,
         `Событие: ${c.event_name || "—"}`,
-        `Кого ищут: ${joinList(parseList(c.roles))}`,
+        `${rolesLabel(c.kind)}: ${joinList(parseList(c.roles))}`,
         `Формат: ${FORMAT_TITLES[c.format] ?? c.format}${c.city ? `, ${c.city}` : ""}`,
         `Дедлайн: ${c.deadline ?? "не указан"}`,
         `Описание: ${String(c.description).slice(0, 1200)}`,
@@ -715,6 +720,9 @@ async function scoreCards(env: Env, profile: any, cards: any[]) {
     "под каждое объявление как сокомандник или исследователь, по шкале от 0 до 100. " +
     "Учитывай совпадение навыков с тем, кого ищут; опыт, проекты и достижения; интересы и область; " +
     "город и формат (онлайн или очно); возраст — только если он важен для конкурса. " +
+    "В объявлении «Ищу команду» автор сам ищет команду и перечисляет, чем поможет: оцени, насколько читатель " +
+    "подошёл бы ему в сокомандники. Плюс — если читатель закрывает роли, которых автору не хватает (ищи их в описании), " +
+    "а не повторяет его навыки: второй такой же специалист команде почти не нужен. " +
     "Шкала: 85–100 — почти идеально, 60–84 — хорошо подходит, 35–59 — частично, ниже 35 — слабо. " +
     "Оценку читает сам владелец профиля, поэтому пиши по-русски и обращайся к нему напрямую на «вы», " +
     "например: «Ваш опыт со SwiftUI закрывает роль iOS-разработчика», «Вам не хватает опыта с биологическими данными». " +

@@ -6,4 +6,7 @@ DerivedData/
 ForceBridge.swiftpm/.swiftpm/xcode/
 preview/
 .env
-supabase/.temp/
+node_modules/
+.wrangler/
+server/dist/
+.dev.vars

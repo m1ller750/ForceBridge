@@ -267,11 +267,10 @@ struct CardEditorView: View {
             errorText = message
             return
         }
-        guard let me = store.me else { return }
+        guard store.me != nil else { return }
         errorText = nil
         saving = true
         let draft = CardDraft(
-            authorId: me.id,
             kind: kind,
             title: title.trimmingCharacters(in: .whitespacesAndNewlines),
             description: description.trimmingCharacters(in: .whitespacesAndNewlines),

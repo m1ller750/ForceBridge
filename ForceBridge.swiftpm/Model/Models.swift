@@ -86,8 +86,8 @@ struct Profile: Codable, Identifiable, Hashable, Sendable {
     var achievements: [String]
     var messenger: Messenger
     var contact: String
-    var resumePath: String?
     var resumeName: String?
+    var resumeType: String?
     var createdAt: Date?
     var updatedAt: Date?
 
@@ -95,7 +95,7 @@ struct Profile: Codable, Identifiable, Hashable, Sendable {
         Profile(
             id: id, fullName: "", age: nil, city: "", occupation: "", about: "",
             skills: [], projects: [], achievements: [], messenger: .telegram, contact: "",
-            resumePath: nil, resumeName: nil, createdAt: nil, updatedAt: nil
+            resumeName: nil, resumeType: nil, createdAt: nil, updatedAt: nil
         )
     }
 
@@ -117,7 +117,7 @@ struct Profile: Codable, Identifiable, Hashable, Sendable {
         return parts.joined(separator: " · ")
     }
 
-    var hasResume: Bool { resumePath != nil }
+    var hasResume: Bool { resumeName != nil }
 }
 
 // MARK: - Карточки-объявления
@@ -199,7 +199,6 @@ struct Card: Codable, Identifiable, Hashable, Sendable {
 
 /// Данные карточки для создания и изменения.
 struct CardDraft: Encodable, Sendable {
-    var authorId: UUID
     var kind: CardKind
     var title: String
     var description: String
@@ -210,12 +209,11 @@ struct CardDraft: Encodable, Sendable {
     var deadline: Date?
 
     enum CodingKeys: String, CodingKey {
-        case authorId, kind, title, description, eventName, roles, city, format, deadline
+        case kind, title, description, eventName, roles, city, format, deadline
     }
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(authorId, forKey: .authorId)
         try container.encode(kind, forKey: .kind)
         try container.encode(title, forKey: .title)
         try container.encode(description, forKey: .description)
@@ -244,25 +242,15 @@ struct ResponseRow: Codable, Identifiable, Hashable, Sendable {
     var card: Card?
 }
 
-struct FavoriteRow: Decodable, Sendable {
-    var profileId: UUID
-    var createdAt: Date
-    var profile: Profile?
-}
-
-struct NewResponse: Encodable, Sendable {
-    var cardId: UUID
-    var userId: UUID
+struct ResponseRequest: Encodable, Sendable {
     var message: String
 }
 
-struct NewFavorite: Encodable, Sendable {
-    var ownerId: UUID
-    var profileId: UUID
-}
-
-struct HiddenPatch: Encodable, Sendable {
-    var hidden: Bool
+/// Ответ /me: кто вошёл и заполнен ли паспорт участника.
+struct MeResponse: Decodable, Sendable {
+    var userId: UUID
+    var email: String
+    var profile: Profile?
 }
 
 // MARK: - ИИ
@@ -346,23 +334,13 @@ struct CategoryCount: Decodable, Sendable {
 
 // MARK: - Параметры запросов
 
-struct SearchParams: Encodable, Sendable {
-    var pFormats: [String]
-    var pFields: [String]
-    var pQuery: String
-    var pKind: String
-    var pSort: String
-}
-
-struct EmptyParams: Encodable, Sendable {}
-
-struct PendingRequest: Encodable, Sendable {
-    var pending: Bool
-}
-
-struct RegisterRequest: Encodable, Sendable {
-    var email: String
-    var password: String
+/// Поиск и фильтр ленты. Внутри группы категорий — «или», между группами — «и».
+struct SearchRequest: Encodable, Sendable {
+    var formats: [String]
+    var fields: [String]
+    var query: String
+    var kind: String
+    var sort: String
 }
 
 /// Ответ, содержимое которого не нужно.
@@ -418,6 +396,6 @@ extension Array {
 }
 
 extension UUID {
-    /// Нижний регистр — так UUID хранит Postgres и так пишутся пути в хранилище.
+    /// Нижний регистр — так идентификаторы хранит сервер.
     var lower: String { uuidString.lowercased() }
 }

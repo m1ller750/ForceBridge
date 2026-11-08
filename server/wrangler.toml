@@ -1,0 +1,16 @@
+name = "forcebridge-api"
+main = "src/index.ts"
+compatibility_date = "2025-10-01"
+workers_dev = true
+
+[observability]
+enabled = true
+
+# ИИ доразбирает «зависшие» карточки раз в 10 минут.
+[triggers]
+crons = ["*/10 * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "forcebridge"
+database_id = "653e5c1f-215c-4854-a56c-895f7d40cb53"

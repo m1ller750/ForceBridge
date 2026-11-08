@@ -203,7 +203,7 @@ struct CabinetView: View {
                     SectionTitle(number: "05", title: "Резюме")
                     Text(me.hasResume
                          ? "Загружено: \(me.resumeName ?? "резюме"). Его увидят авторы объявлений, на которые вы откликнетесь."
-                         : "PDF, Word или фото до 10 МБ. Авторы объявлений смогут открыть его из вашего отклика.")
+                         : "PDF, Word или фото до 1,8 МБ (большие фото сожмутся сами). Авторы объявлений откроют его из вашего отклика.")
                         .font(Typo.footnote)
                         .foregroundStyle(Palette.graphite)
                         .fixedSize(horizontal: false, vertical: true)

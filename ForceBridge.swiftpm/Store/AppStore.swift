@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 struct Toast: Identifiable, Equatable {
     let id = UUID()
@@ -6,7 +7,7 @@ struct Toast: Identifiable, Equatable {
     let message: String
 }
 
-/// Состояние приложения. Все данные живут в общей базе Supabase:
+/// Состояние приложения. Все данные живут на сервере ForceBridge (Cloudflare Worker + D1):
 /// удалили или изменили карточку — это видно всем пользователям.
 @MainActor
 final class AppStore: ObservableObject {
@@ -51,16 +52,12 @@ final class AppStore: ObservableObject {
 
     @Published var toast: Toast?
 
-    let api = SupabaseClient(baseURL: SupabaseConfig.url, apiKey: SupabaseConfig.anonKey)
+    let api = APIClient(baseURL: ServerConfig.baseURL)
 
     // MARK: - Запуск и вход
 
     func bootstrap() async {
-        guard SupabaseConfig.isConfigured else {
-            phase = .signedOut
-            return
-        }
-        guard let session = await api.restoreSession() else {
+        guard ServerConfig.isConfigured, let session = await api.currentSession() else {
             phase = .signedOut
             return
         }
@@ -75,23 +72,30 @@ final class AppStore: ObservableObject {
     }
 
     func signIn(email: String, password: String) async throws {
-        let session = try await api.signIn(
-            email: email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(),
-            password: password
-        )
+        let session = try await api.signIn(email: clean(email), password: password)
         userID = session.userId
         self.email = session.email
         await loadProfileAndRoute()
     }
 
     func register(email: String, password: String) async throws {
-        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        try await api.register(email: cleanEmail, password: password)
-        try await signIn(email: cleanEmail, password: password)
+        let session = try await api.register(email: clean(email), password: password)
+        userID = session.userId
+        self.email = session.email
+        await loadProfileAndRoute()
     }
 
     func signOut() async {
         await api.signOut()
+        resetState()
+        phase = .signedOut
+    }
+
+    private func clean(_ email: String) -> String {
+        email.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    private func resetState() {
         me = nil
         userID = nil
         email = ""
@@ -106,21 +110,14 @@ final class AppStore: ObservableObject {
         selectedCategories = []
         query = ""
         kindFilter = nil
-        phase = .signedOut
     }
 
     private func loadProfileAndRoute() async {
-        guard let userID else {
-            phase = .signedOut
-            return
-        }
         do {
-            let rows = try await api.select(
-                "profiles",
-                query: [URLQueryItem(name: "id", value: "eq.\(userID.lower)")],
-                as: [Profile].self
-            )
-            if let profile = rows.first {
+            let response = try await api.get("me", as: MeResponse.self)
+            userID = response.userId
+            email = response.email
+            if let profile = response.profile {
                 me = profile
                 phase = .ready
                 await afterLogin()
@@ -128,7 +125,8 @@ final class AppStore: ObservableObject {
                 phase = .needsProfile
             }
         } catch APIError.unauthorized {
-            await signOut()
+            resetState()
+            phase = .signedOut
         } catch {
             phase = .failed(error.localizedDescription)
         }
@@ -143,11 +141,22 @@ final class AppStore: ObservableObject {
         await kickClassification()
     }
 
+    /// Ошибка «сессия истекла» возвращает на экран входа.
+    private func handle(_ error: Error) {
+        if case APIError.unauthorized = error {
+            resetState()
+            phase = .signedOut
+            showToast("Сессия истекла", "Войдите снова.")
+        } else {
+            showError(error)
+        }
+    }
+
     // MARK: - Профиль
 
     func saveProfile(_ profile: Profile) async throws {
-        let saved = try await api.upsert("profiles", body: profile, onConflict: "id", as: [Profile].self)
-        me = saved.first ?? profile
+        let saved = try await api.send("PUT", "profile", body: profile, as: Profile.self)
+        me = saved
         compat = [:]
         compatErrors = [:]
         if phase == .needsProfile {
@@ -158,48 +167,65 @@ final class AppStore: ObservableObject {
 
     func profile(id: UUID) async throws -> Profile {
         if let me, me.id == id { return me }
-        let rows = try await api.select(
-            "profiles",
-            query: [URLQueryItem(name: "id", value: "eq.\(id.lower)")],
-            as: [Profile].self
-        )
-        guard let first = rows.first else {
-            throw APIError.server(status: 404, message: "Профиль не найден")
-        }
-        return first
+        return try await api.get("profiles/\(id.lower)", as: Profile.self)
     }
 
     func uploadResume(from url: URL) async throws {
-        guard var profile = me else { return }
         let accessing = url.startAccessingSecurityScopedResource()
         defer {
             if accessing { url.stopAccessingSecurityScopedResource() }
         }
-        let data = try Data(contentsOf: url)
-        guard data.count <= 10_000_000 else {
-            throw APIError.server(status: 413, message: "Файл больше 10 МБ. Сожмите резюме или сохраните его в PDF.")
+        var data = try Data(contentsOf: url)
+        var fileName = url.lastPathComponent
+        var ext = url.pathExtension.lowercased()
+
+        // Фото сжимаем, чтобы уложиться в лимит сервера.
+        if ["jpg", "jpeg", "png", "heic"].contains(ext), data.count > 1_500_000, let image = UIImage(data: data) {
+            if let compressed = Self.compressedJPEG(image, limit: 1_500_000) {
+                data = compressed
+                ext = "jpg"
+                fileName = (fileName as NSString).deletingPathExtension + ".jpg"
+            }
         }
-        let ext = url.pathExtension.lowercased()
-        let safeExt = ext.isEmpty ? "pdf" : ext
-        let path = "\(profile.id.lower)/resume.\(safeExt)"
-        try await api.upload(bucket: "resumes", path: path, data: data, contentType: Self.mimeType(for: safeExt))
-        profile.resumePath = path
-        profile.resumeName = url.lastPathComponent
-        try await saveProfile(profile)
-        showToast("Резюме загружено", url.lastPathComponent)
+        guard data.count <= 1_800_000 else {
+            throw APIError.server(status: 413, message: "Файл больше 1,8 МБ. Сожмите PDF или загрузите фото резюме.")
+        }
+        let saved = try await api.upload(
+            "profile/resume",
+            data: data,
+            contentType: Self.mimeType(for: ext),
+            fileName: fileName,
+            as: Profile.self
+        )
+        me = saved
+        showToast("Резюме загружено", fileName)
     }
 
     func resumeFile(for profile: Profile) async throws -> URL {
-        guard let path = profile.resumePath else {
-            throw APIError.server(status: 404, message: "Резюме не загружено")
-        }
-        let data = try await api.download(bucket: "resumes", path: path)
+        let data = try await api.download("profiles/\(profile.id.lower)/resume")
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        let name = profile.resumeName ?? "Резюме.\((path as NSString).pathExtension)"
-        let file = folder.appendingPathComponent(name)
+        let file = folder.appendingPathComponent(profile.resumeName ?? "Резюме.pdf")
         try data.write(to: file)
         return file
+    }
+
+    private static func compressedJPEG(_ image: UIImage, limit: Int) -> Data? {
+        var quality: CGFloat = 0.8
+        var current = image
+        for _ in 0..<6 {
+            if let data = current.jpegData(compressionQuality: quality), data.count <= limit {
+                return data
+            }
+            quality -= 0.12
+            if quality < 0.35 {
+                let size = CGSize(width: current.size.width * 0.75, height: current.size.height * 0.75)
+                let renderer = UIGraphicsImageRenderer(size: size)
+                current = renderer.image { _ in current.draw(in: CGRect(origin: .zero, size: size)) }
+                quality = 0.7
+            }
+        }
+        return current.jpegData(compressionQuality: 0.5)
     }
 
     private static func mimeType(for ext: String) -> String {
@@ -209,7 +235,7 @@ final class AppStore: ObservableObject {
         case "docx": return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         case "jpg", "jpeg": return "image/jpeg"
         case "png": return "image/png"
-        default: return "application/octet-stream"
+        default: return "application/pdf"
         }
     }
 
@@ -243,18 +269,19 @@ final class AppStore: ObservableObject {
         feedLoading = true
         defer { feedLoading = false }
         let formatKeys = Set(formatCategories.map { $0.key })
-        let formats = selectedCategories.filter { formatKeys.contains($0) }.sorted()
-        let fields = selectedCategories.filter { !formatKeys.contains($0) }.sorted()
-        let params = SearchParams(
-            pFormats: formats,
-            pFields: fields,
-            pQuery: query.trimmingCharacters(in: .whitespacesAndNewlines),
-            pKind: kindFilter?.rawValue ?? "",
-            pSort: sort.rpcValue
+        let request = SearchRequest(
+            formats: selectedCategories.filter { formatKeys.contains($0) }.sorted(),
+            fields: selectedCategories.filter { !formatKeys.contains($0) }.sorted(),
+            query: query.trimmingCharacters(in: .whitespacesAndNewlines),
+            kind: kindFilter?.rawValue ?? "",
+            sort: sort.rpcValue
         )
         do {
-            feed = try await api.rpc("search_cards", params: params, as: [Card].self)
+            feed = try await api.send("POST", "cards/search", body: request, as: [Card].self)
             feedError = nil
+        } catch APIError.unauthorized {
+            handle(APIError.unauthorized)
+            return
         } catch {
             feedError = error.localizedDescription
         }
@@ -277,18 +304,14 @@ final class AppStore: ObservableObject {
     }
 
     func loadCategories() async {
-        if let list = try? await api.select(
-            "categories",
-            query: [URLQueryItem(name: "order", value: "sort")],
-            as: [CategoryInfo].self
-        ), !list.isEmpty {
+        if let list = try? await api.get("categories", as: [CategoryInfo].self), !list.isEmpty {
             categories = list
         }
         await loadCategoryCounts()
     }
 
     func loadCategoryCounts() async {
-        guard let rows = try? await api.rpc("category_counts", params: EmptyParams(), as: [CategoryCount].self) else { return }
+        guard let rows = try? await api.get("categories/counts", as: [CategoryCount].self) else { return }
         var counts: [String: Int] = [:]
         for row in rows {
             counts[row.key] = row.total
@@ -298,7 +321,7 @@ final class AppStore: ObservableObject {
 
     /// Просит сервер доразобрать карточки, которые ИИ ещё не классифицировал.
     func kickClassification() async {
-        _ = try? await api.invoke("classify-card", body: PendingRequest(pending: true), as: IgnoredResponse.self)
+        _ = try? await api.post("ai/classify-pending", as: IgnoredResponse.self)
     }
 
     // MARK: - Карточки
@@ -308,16 +331,9 @@ final class AppStore: ObservableObject {
     }
 
     func fetchCard(id: UUID) async throws -> Card {
-        let rows = try await api.select(
-            "card_feed",
-            query: [URLQueryItem(name: "id", value: "eq.\(id.lower)")],
-            as: [Card].self
-        )
-        guard let first = rows.first else {
-            throw APIError.server(status: 404, message: "Объявление удалено автором")
-        }
-        replaceCard(first)
-        return first
+        let card = try await api.get("cards/\(id.lower)", as: Card.self)
+        replaceCard(card)
+        return card
     }
 
     func isMine(_ card: Card) -> Bool {
@@ -325,36 +341,20 @@ final class AppStore: ObservableObject {
     }
 
     func loadMyCards() async {
-        guard let me else { return }
         do {
-            myCards = try await api.select(
-                "card_feed",
-                query: [
-                    URLQueryItem(name: "author_id", value: "eq.\(me.id.lower)"),
-                    URLQueryItem(name: "order", value: "created_at.desc")
-                ],
-                as: [Card].self
-            )
+            myCards = try await api.get("my/cards", as: [Card].self)
         } catch {
-            showError(error)
+            handle(error)
         }
     }
 
     @discardableResult
     func saveCard(_ draft: CardDraft, editing original: Card?) async throws -> Card {
-        let rows: [Card]
+        let saved: Card
         if let original {
-            rows = try await api.update(
-                "cards",
-                filters: [URLQueryItem(name: "id", value: "eq.\(original.id.lower)")],
-                body: draft,
-                as: [Card].self
-            )
+            saved = try await api.send("PATCH", "cards/\(original.id.lower)", body: draft, as: Card.self)
         } else {
-            rows = try await api.insert("cards", body: draft, as: [Card].self)
-        }
-        guard let saved = rows.first else {
-            throw APIError.server(status: 0, message: "Сервер не вернул объявление")
+            saved = try await api.send("POST", "cards", body: draft, as: Card.self)
         }
         compat[saved.id] = nil
         await loadMyCards()
@@ -364,7 +364,7 @@ final class AppStore: ObservableObject {
     }
 
     func deleteCard(_ card: Card) async throws {
-        try await api.delete("cards", filters: [URLQueryItem(name: "id", value: "eq.\(card.id.lower)")])
+        try await api.send("DELETE", "cards/\(card.id.lower)")
         myCards.removeAll { $0.id == card.id }
         feed.removeAll { $0.id == card.id }
         compat[card.id] = nil
@@ -408,68 +408,38 @@ final class AppStore: ObservableObject {
     }
 
     func respond(to card: Card, message: String) async throws {
-        guard let me else { return }
-        let body = NewResponse(cardId: card.id, userId: me.id, message: message.trimmingCharacters(in: .whitespacesAndNewlines))
-        try await api.insertMinimal("responses", body: body)
+        let body = ResponseRequest(message: message.trimmingCharacters(in: .whitespacesAndNewlines))
+        try await api.send("POST", "cards/\(card.id.lower)/responses", body: body)
         respondedCardIDs.insert(card.id)
         await loadMyResponses()
         showToast("Отклик отправлен", "Автор увидит ваш профиль и контакты.")
     }
 
     func withdrawResponse(to card: Card) async throws {
-        guard let me else { return }
-        try await api.delete(
-            "responses",
-            filters: [
-                URLQueryItem(name: "card_id", value: "eq.\(card.id.lower)"),
-                URLQueryItem(name: "user_id", value: "eq.\(me.id.lower)")
-            ]
-        )
+        try await api.send("DELETE", "cards/\(card.id.lower)/responses")
         respondedCardIDs.remove(card.id)
         myResponses.removeAll { $0.cardId == card.id }
     }
 
     func responses(for card: Card) async throws -> [ResponseRow] {
-        try await api.select(
-            "responses",
-            query: [
-                URLQueryItem(name: "select", value: "*,profile:profiles(*)"),
-                URLQueryItem(name: "card_id", value: "eq.\(card.id.lower)"),
-                URLQueryItem(name: "hidden", value: "is.false"),
-                URLQueryItem(name: "order", value: "created_at.desc")
-            ],
-            as: [ResponseRow].self
-        )
+        try await api.get("cards/\(card.id.lower)/responses", as: [ResponseRow].self)
     }
 
     /// Убирает человека из списка откликнувшихся (для автора карточки).
     func removeResponse(_ response: ResponseRow) async throws {
-        try await api.updateMinimal(
-            "responses",
-            filters: [URLQueryItem(name: "id", value: "eq.\(response.id.lower)")],
-            body: HiddenPatch(hidden: true)
-        )
+        try await api.send("POST", "responses/\(response.id.lower)/hide")
         if let index = myCards.firstIndex(where: { $0.id == response.cardId }), let count = myCards[index].responsesCount {
             myCards[index].responsesCount = max(0, count - 1)
         }
     }
 
     func loadMyResponses() async {
-        guard let me else { return }
         do {
-            let rows = try await api.select(
-                "responses",
-                query: [
-                    URLQueryItem(name: "select", value: "*,card:cards(*)"),
-                    URLQueryItem(name: "user_id", value: "eq.\(me.id.lower)"),
-                    URLQueryItem(name: "order", value: "created_at.desc")
-                ],
-                as: [ResponseRow].self
-            )
+            let rows = try await api.get("my/responses", as: [ResponseRow].self)
             myResponses = rows
             respondedCardIDs = Set(rows.map { $0.cardId })
         } catch {
-            showError(error)
+            handle(error)
         }
     }
 
@@ -485,46 +455,33 @@ final class AppStore: ObservableObject {
             favoriteIDs.remove(profile.id)
             favorites.removeAll { $0.id == profile.id }
             do {
-                try await api.delete(
-                    "favorites",
-                    filters: [
-                        URLQueryItem(name: "owner_id", value: "eq.\(me.id.lower)"),
-                        URLQueryItem(name: "profile_id", value: "eq.\(profile.id.lower)")
-                    ]
-                )
+                try await api.send("DELETE", "favorites/\(profile.id.lower)")
             } catch {
                 favoriteIDs.insert(profile.id)
                 favorites.insert(profile, at: 0)
-                showError(error)
+                handle(error)
             }
         } else {
             favoriteIDs.insert(profile.id)
             favorites.insert(profile, at: 0)
             do {
-                try await api.insertMinimal("favorites", body: NewFavorite(ownerId: me.id, profileId: profile.id))
+                try await api.send("PUT", "favorites/\(profile.id.lower)")
                 showToast("Добавлено в избранное", profile.fullName)
             } catch {
                 favoriteIDs.remove(profile.id)
                 favorites.removeAll { $0.id == profile.id }
-                showError(error)
+                handle(error)
             }
         }
     }
 
     func loadFavorites() async {
         do {
-            let rows = try await api.select(
-                "favorites",
-                query: [
-                    URLQueryItem(name: "select", value: "profile_id,created_at,profile:profiles!favorites_profile_id_fkey(*)"),
-                    URLQueryItem(name: "order", value: "created_at.desc")
-                ],
-                as: [FavoriteRow].self
-            )
-            favorites = rows.compactMap { $0.profile }
-            favoriteIDs = Set(rows.map { $0.profileId })
+            let list = try await api.get("favorites", as: [Profile].self)
+            favorites = list
+            favoriteIDs = Set(list.map { $0.id })
         } catch {
-            showError(error)
+            handle(error)
         }
     }
 
@@ -558,8 +515,9 @@ final class AppStore: ObservableObject {
             }
         }
         do {
-            let response = try await api.invoke(
-                "compatibility",
+            let response = try await api.send(
+                "POST",
+                "ai/compatibility",
                 body: CompatibilityRequest(cardIds: ids.map { $0.lower }, force: force),
                 as: CompatibilityResponse.self
             )

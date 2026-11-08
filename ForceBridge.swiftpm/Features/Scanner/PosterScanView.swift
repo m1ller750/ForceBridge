@@ -2,15 +2,15 @@ import SwiftUI
 import PhotosUI
 import UIKit
 
-/// Распознавание афиши: фото → Vision → черновик события → лента «Вызовы».
-@MainActor
+/// Распознавание афиши: фото → Vision → поля объявления.
 struct PosterScanView: View {
-    @EnvironmentObject private var store: AppStore
+    var onApply: (PosterDraft) -> Void
+
     @Environment(\.dismiss) private var dismiss
     @State private var pickerItem: PhotosPickerItem?
     @State private var image: UIImage?
     @State private var lines: [RecognizedLine] = []
-    @State private var draft = ChallengeDraft()
+    @State private var draft = PosterDraft()
     @State private var phase: Phase = .idle
     @State private var sweep = false
 
@@ -65,10 +65,10 @@ struct PosterScanView: View {
 
     private var intro: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Афиша → вызов")
+            Text("Афиша → объявление")
                 .font(Typo.display(26, weight: .heavy))
                 .foregroundStyle(Palette.ink)
-            Text("Vision распознаёт текст на фото афиши, а приложение вытаскивает название, даты, город, размер команды и темы. Всё можно поправить перед публикацией.")
+            Text("Vision распознаёт текст на фото афиши конкурса, а приложение вытаскивает название, даты, город и размер команды. Всё можно поправить.")
                 .font(Typo.subhead)
                 .foregroundStyle(Palette.graphite)
                 .fixedSize(horizontal: false, vertical: true)
@@ -92,10 +92,8 @@ struct PosterScanView: View {
             .buttonStyle(.plain)
 
             Button {
-                if let sample = SamplePoster.render() {
-                    Task {
-                        await process(sample)
-                    }
+                Task {
+                    await processSample()
                 }
             } label: {
                 HStack(spacing: 8) {
@@ -203,18 +201,8 @@ struct PosterScanView: View {
     private var form: some View {
         VStack(alignment: .leading, spacing: 18) {
             SectionTitle(number: "02", title: "Проверьте поля")
-            FieldBox(label: "Название") {
-                TextField("Название события", text: $draft.title)
-            }
-            VStack(alignment: .leading, spacing: 8) {
-                MonoLabel("Тип", size: 10.5)
-                FlowLayout(spacing: 6, lineSpacing: 6) {
-                    ForEach(ChallengeKind.allCases) { kind in
-                        Chip(title: kind.title, isOn: draft.kind == kind) {
-                            draft.kind = kind
-                        }
-                    }
-                }
+            FieldBox(label: "Название события") {
+                TextField("Например, хакатон «Северный код»", text: $draft.title)
             }
             VStack(spacing: 0) {
                 DatePicker(selection: $draft.startDate, displayedComponents: .date) {
@@ -247,10 +235,6 @@ struct PosterScanView: View {
             if draft.format != .online {
                 CityField(city: $draft.city)
             }
-            VStack(alignment: .leading, spacing: 8) {
-                MonoLabel("Темы", size: 10.5)
-                TopicPicker(selection: $draft.topics)
-            }
             VStack(alignment: .leading, spacing: 18) {
                 FieldBox(label: "Приз") {
                     TextField("Необязательно", text: $draft.prize)
@@ -263,8 +247,11 @@ struct PosterScanView: View {
                         .lineLimit(3...6)
                 }
             }
-            Button("Добавить в вызовы") {
-                store.addChallenge(draft.makeChallenge())
+            Button("Подставить в объявление") {
+                if draft.datesFound == 0 {
+                    draft.datesFound = 1
+                }
+                onApply(draft)
                 dismiss()
             }
             .buttonStyle(.signal)
@@ -274,7 +261,6 @@ struct PosterScanView: View {
 
     // MARK: Обработка
 
-    @MainActor
     private func load(_ item: PhotosPickerItem) async {
         phase = .loading
         lines = []
@@ -290,7 +276,14 @@ struct PosterScanView: View {
         }
     }
 
-    @MainActor
+    private func processSample() async {
+        guard let sample = SamplePoster.render() else {
+            phase = .failed("Не удалось нарисовать пример афиши.")
+            return
+        }
+        await process(sample)
+    }
+
     private func process(_ picked: UIImage) async {
         image = picked
         lines = []

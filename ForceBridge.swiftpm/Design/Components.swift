@@ -140,17 +140,19 @@ struct SectionTitle: View {
 
 // MARK: - Метки
 
-/// Код роли в рамке: «ML», «DSN». Пунктир — вакансия.
-struct RoleCode: View {
+/// Короткий код в рамке: «AI», «HCK». Пунктир — то, чего ещё не хватает.
+struct CodeTag: View {
     enum Style { case filled, outline, vacancy }
 
-    let role: Role
+    let text: String
     var style: Style = .outline
+    var label: String? = nil
 
     var body: some View {
-        Text(role.code)
+        Text(text)
             .font(Typo.mono(10.5, weight: .bold))
             .tracking(0.4)
+            .lineLimit(1)
             .padding(.horizontal, 5)
             .padding(.vertical, 2.5)
             .foregroundStyle(textColor)
@@ -159,7 +161,7 @@ struct RoleCode: View {
                 Rectangle()
                     .strokeBorder(borderColor, style: StrokeStyle(lineWidth: 1, dash: style == .vacancy ? [3, 2] : []))
             }
-            .accessibilityLabel(role.title)
+            .accessibilityLabel(label ?? text)
     }
 
     private var textColor: Color {
@@ -187,9 +189,9 @@ struct RoleCode: View {
     }
 }
 
-/// Тип события: «HCK  ХАКАТОН».
+/// Тип объявления: «TEAM  СОКОМАНДНИК».
 struct KindTag: View {
-    let kind: ChallengeKind
+    let kind: CardKind
 
     var body: some View {
         HStack(spacing: 6) {
@@ -199,7 +201,7 @@ struct KindTag: View {
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .background(Palette.ink)
-            Text(kind.title.uppercased())
+            Text(kind.shortTitle.uppercased())
                 .font(Typo.mono(10, weight: .medium))
                 .tracking(0.6)
                 .foregroundStyle(Palette.graphite)
@@ -207,6 +209,22 @@ struct KindTag: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(kind.title)
+    }
+}
+
+/// Метка «ИИ» рядом с тем, что посчитала нейросеть.
+struct AIBadge: View {
+    var text: String = "ИИ"
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(Typo.mono(9, weight: .bold))
+            .tracking(0.6)
+            .foregroundStyle(Palette.onSignal)
+            .padding(.horizontal, 4)
+            .padding(.vertical, 2)
+            .background(Palette.signal)
+            .accessibilityLabel("Определено искусственным интеллектом")
     }
 }
 

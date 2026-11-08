@@ -1,7 +1,7 @@
 // swift-tools-version: 5.9
 
 // ForceBridge — пакет приложения Swift Playgrounds (.swiftpm).
-// Открывается в Swift Playgrounds (iPad / Mac) и в Xcode 15+.
+// Открывается в Swift Playgrounds 4.6+ (iPad / Mac) и в Xcode 16+.
 
 import PackageDescription
 import AppleProductTypes
@@ -17,8 +17,8 @@ let package = Package(
             targets: ["AppModule"],
             bundleIdentifier: "app.forcebridge.ForceBridge",
             teamIdentifier: "",
-            displayVersion: "1.0",
-            bundleVersion: "1",
+            displayVersion: "2.0",
+            bundleVersion: "2",
             appIcon: .asset("AppIcon"),
             accentColor: .asset("AccentColor"),
             supportedDeviceFamilies: [

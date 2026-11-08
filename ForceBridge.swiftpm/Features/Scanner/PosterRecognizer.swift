@@ -61,14 +61,28 @@ enum PosterRecognizer {
     }
 }
 
-// MARK: - Черновик события
+// MARK: - Черновик по афише
 
-struct ChallengeDraft {
+enum PosterKind: String {
+    case hackathon, olympiad, contest, grant
+
+    var title: String {
+        switch self {
+        case .hackathon: return "Хакатон"
+        case .olympiad: return "Олимпиада"
+        case .contest: return "Конкурс"
+        case .grant: return "Грант"
+        }
+    }
+}
+
+/// Что удалось вытащить из афиши. Используется для заполнения объявления.
+struct PosterDraft {
     var title = ""
-    var kind: ChallengeKind = .hackathon
+    var kind: PosterKind = .hackathon
     var organizer = ""
     var summary = ""
-    var format: WorkFormat = .offline
+    var format: CardFormat = .offline
     var city = ""
     var startDate = Date()
     var deadline = Date()
@@ -78,27 +92,24 @@ struct ChallengeDraft {
     var prize = ""
     var datesFound = 0
 
-    func makeChallenge() -> Challenge {
-        let cleanTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanCity = city.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanPrize = prize.trimmingCharacters(in: .whitespacesAndNewlines)
-        let cleanOrganizer = organizer.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Текст для описания объявления.
+    var cardDescription: String {
+        var lines: [String] = []
         let cleanSummary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-        return Challenge(
-            title: cleanTitle.isEmpty ? "Новый вызов" : cleanTitle,
-            kind: kind,
-            organizer: cleanOrganizer.isEmpty ? "Организатор не указан" : cleanOrganizer,
-            summary: cleanSummary.isEmpty ? "Добавлено по фото афиши." : cleanSummary,
-            format: format,
-            city: format == .online || cleanCity.isEmpty ? nil : cleanCity,
-            startDate: startDate,
-            registrationDeadline: min(deadline, startDate),
-            minTeam: max(1, min(minTeam, maxTeam)),
-            maxTeam: max(minTeam, maxTeam),
-            topics: topics,
-            prize: cleanPrize.isEmpty ? nil : cleanPrize,
-            isUserCreated: true
-        )
+        if !cleanSummary.isEmpty {
+            lines.append(cleanSummary)
+        }
+        if datesFound > 0 {
+            lines.append("Старт: \(Fmt.dayMonth(startDate)), регистрация до \(Fmt.dayMonth(deadline)).")
+        }
+        lines.append("Команда: \(min(minTeam, maxTeam))–\(max(minTeam, maxTeam)) человек.")
+        if !prize.isEmpty {
+            lines.append(prize)
+        }
+        if !organizer.isEmpty {
+            lines.append("Организатор: \(organizer).")
+        }
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -147,8 +158,8 @@ enum PosterParser {
         ("агро", "Агротех"), ("сельск", "Агротех"), ("социал", "Социальные проекты"), ("инклюз", "Социальные проекты")
     ]
 
-    static func parse(_ lines: [RecognizedLine], now: Date = Date()) -> ChallengeDraft {
-        var draft = ChallengeDraft()
+    static func parse(_ lines: [RecognizedLine], now: Date = Date()) -> PosterDraft {
+        var draft = PosterDraft()
         guard !lines.isEmpty else { return draft }
 
         // Порядок чтения: сверху вниз, слева направо (у Vision ось Y направлена вверх).
@@ -212,7 +223,7 @@ enum PosterParser {
         let isOnline = lowerText.contains("онлайн") || lowerText.contains("online")
             || lowerText.contains("дистанц") || lowerText.contains("удалённ") || lowerText.contains("удаленн")
         if isHybrid || (isOnline && !draft.city.isEmpty) {
-            draft.format = .hybrid
+            draft.format = .any
         } else if isOnline {
             draft.format = .online
         } else {
@@ -266,7 +277,7 @@ enum PosterParser {
 
     // MARK: Вспомогательное
 
-    static func detectKind(_ text: String) -> ChallengeKind {
+    static func detectKind(_ text: String) -> PosterKind {
         if text.contains("хакатон") || text.contains("hackathon") { return .hackathon }
         if text.contains("олимпиад") || text.contains("olymp") { return .olympiad }
         if text.contains("грант") || text.contains("grant") { return .grant }
@@ -274,7 +285,7 @@ enum PosterParser {
         return .hackathon
     }
 
-    private static func makeTitle(_ raw: String, kind: ChallengeKind) -> String {
+    private static func makeTitle(_ raw: String, kind: PosterKind) -> String {
         let quotes = CharacterSet(charactersIn: "«»\"“”„'")
         var title = raw.trimmingCharacters(in: quotes.union(.whitespacesAndNewlines).union(.punctuationCharacters))
         guard !title.isEmpty else { return "" }

@@ -2,15 +2,14 @@ import SwiftUI
 
 /// «Паспорт участника» — оформлен как основная надпись (штамп) инженерного чертежа.
 struct TitleBlock: View {
-    let person: Person
+    let profile: Profile
     var isMe: Bool = false
-    var sheetNumber: String = "1 / 1"
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
                 cell("Участник") {
-                    Text(person.name)
+                    Text(profile.fullName)
                         .font(Typo.display(21, weight: .bold))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(2)
@@ -18,70 +17,53 @@ struct TitleBlock: View {
                 }
                 verticalRule
                 cell("Узел") {
-                    Monogram(initials: person.initials, size: 40, emphasized: isMe)
+                    Monogram(initials: profile.initials, size: 40, emphasized: isMe)
                 }
                 .frame(width: 78)
             }
             .fixedSize(horizontal: false, vertical: true)
             horizontalRule
             HStack(spacing: 0) {
-                cell("Роли") {
-                    HStack(spacing: 4) {
-                        ForEach(person.roles) { role in
-                            RoleCode(role: role, style: .filled)
-                        }
-                    }
+                cell("Чем занимается") {
+                    Text(profile.occupation.isEmpty ? "—" : profile.occupation)
+                        .font(Typo.subhead.weight(.medium))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 verticalRule
-                cell("Нагрузка") {
-                    Text("\(person.hoursPerWeek) ч/нед")
+                cell("Возраст") {
+                    Text(profile.age.map { "\($0)" } ?? "—")
                         .font(Typo.mono(14, weight: .semibold))
                         .foregroundStyle(Palette.ink)
                 }
-                .frame(width: 108)
+                .frame(width: 78)
             }
             .fixedSize(horizontal: false, vertical: true)
             horizontalRule
             HStack(spacing: 0) {
-                cell("Организация") {
-                    Text(person.affiliation.isEmpty ? "—" : person.affiliation)
-                        .font(Typo.subhead.weight(.medium))
-                        .foregroundStyle(Palette.ink)
-                        .lineLimit(2)
-                }
-                verticalRule
                 cell("Город") {
-                    Text(person.city.isEmpty ? "—" : person.city)
+                    Text(profile.city.isEmpty ? "—" : profile.city)
                         .font(Typo.subhead.weight(.medium))
                         .foregroundStyle(Palette.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
-                .frame(width: 108)
-            }
-            .fixedSize(horizontal: false, vertical: true)
-            horizontalRule
-            HStack(spacing: 0) {
-                cell("Формат") {
-                    Text(person.format.title)
+                verticalRule
+                cell("Связь") {
+                    Text(profile.messenger.title)
                         .font(Typo.mono(12, weight: .semibold))
                         .foregroundStyle(Palette.ink)
-                }
-                verticalRule
-                cell("Статус") {
-                    Text(person.isLookingForTeam ? "Ищет команду" : "Не ищет")
-                        .font(Typo.mono(12, weight: .semibold))
-                        .foregroundStyle(person.isLookingForTeam ? Palette.signal : Palette.ink)
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
                 }
                 verticalRule
-                cell("Лист") {
-                    Text(sheetNumber)
+                cell("Резюме") {
+                    Text(profile.hasResume ? "Есть" : "Нет")
                         .font(Typo.mono(12, weight: .semibold))
-                        .foregroundStyle(Palette.ink)
+                        .foregroundStyle(profile.hasResume ? Palette.signal : Palette.faint)
                 }
-                .frame(width: 66)
+                .frame(width: 78)
             }
             .fixedSize(horizontal: false, vertical: true)
         }

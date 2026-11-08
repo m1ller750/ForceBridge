@@ -1,22 +1,21 @@
 import SwiftUI
 
 enum Route: Hashable {
-    case challenge(UUID)
-    case team(UUID)
-    case person(UUID)
+    case card(UUID)
+    case profile(UUID)
+    case respondent(ResponseRow)
 }
 
 enum AppTab: Int, CaseIterable, Identifiable {
-    case challenges, teams, map, profile
+    case feed, map, cabinet
 
     var id: Int { rawValue }
 
     var title: String {
         switch self {
-        case .challenges: return "Вызовы"
-        case .teams: return "Команды"
+        case .feed: return "Объявления"
         case .map: return "Карта сил"
-        case .profile: return "Профиль"
+        case .cabinet: return "Кабинет"
         }
     }
 
@@ -28,40 +27,91 @@ struct RootView: View {
 
     var body: some View {
         ZStack {
-            if store.me == nil {
-                OnboardingView()
+            switch store.phase {
+            case .launching:
+                LaunchView()
                     .transition(.opacity)
-            } else {
+            case .signedOut:
+                AuthView()
+                    .transition(.opacity)
+            case .needsProfile:
+                ProfileSetupView()
+                    .transition(.opacity)
+            case .ready:
                 MainView()
+                    .transition(.opacity)
+            case .failed(let message):
+                LaunchFailedView(message: message)
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.35), value: store.me == nil)
+        .animation(.easeInOut(duration: 0.3), value: store.phase)
         .overlay(alignment: .top) {
             ToastOverlay()
         }
+        .task {
+            await store.bootstrap()
+        }
+    }
+}
+
+private struct LaunchView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Spacer()
+            AssemblingTruss()
+                .frame(height: 96)
+            MonoLabel("ForceBridge · подключаемся", color: Palette.graphite)
+            Spacer()
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .paperBackground()
+    }
+}
+
+private struct LaunchFailedView: View {
+    @EnvironmentObject private var store: AppStore
+    let message: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Spacer()
+            EmptyNote(title: "Не удалось загрузить профиль", message: message)
+            Button("Повторить") {
+                Task { await store.retryLaunch() }
+            }
+            .buttonStyle(.signal)
+            Button("Выйти из аккаунта") {
+                Task { await store.signOut() }
+            }
+            .buttonStyle(.outline)
+            Spacer()
+        }
+        .padding(.horizontal, Metrics.gutter)
+        .frame(maxWidth: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .paperBackground()
     }
 }
 
 struct MainView: View {
     @EnvironmentObject private var store: AppStore
-    @State private var tab: AppTab = .challenges
-    @State private var challengesPath: [Route] = []
-    @State private var teamsPath: [Route] = []
+    @State private var tab: AppTab = .feed
+    @State private var feedPath: [Route] = []
     @State private var mapPath: [Route] = []
-    @State private var profilePath: [Route] = []
+    @State private var cabinetPath: [Route] = []
+
+    private var responsesTotal: Int {
+        store.myCards.reduce(0) { $0 + ($1.responsesCount ?? 0) }
+    }
 
     var body: some View {
         ZStack {
-            layer(.challenges) {
-                NavigationStack(path: $challengesPath) {
-                    ChallengesView()
-                        .routeDestinations()
-                }
-            }
-            layer(.teams) {
-                NavigationStack(path: $teamsPath) {
-                    TeamsView()
+            layer(.feed) {
+                NavigationStack(path: $feedPath) {
+                    FeedView()
                         .routeDestinations()
                 }
             }
@@ -71,16 +121,20 @@ struct MainView: View {
                         .routeDestinations()
                 }
             }
-            layer(.profile) {
-                NavigationStack(path: $profilePath) {
-                    ProfileView()
+            layer(.cabinet) {
+                NavigationStack(path: $cabinetPath) {
+                    CabinetView()
                         .routeDestinations()
                 }
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
-            TabBar(selection: $tab, badge: store.incomingPending.count) { reselected in
-                popToRoot(reselected)
+            TabBar(selection: $tab, badge: responsesTotal) { reselected in
+                switch reselected {
+                case .feed: feedPath.removeAll()
+                case .map: mapPath.removeAll()
+                case .cabinet: cabinetPath.removeAll()
+                }
             }
         }
         .ignoresSafeArea(.keyboard, edges: .bottom)
@@ -93,27 +147,18 @@ struct MainView: View {
             .allowsHitTesting(tab == value)
             .accessibilityHidden(tab != value)
     }
-
-    private func popToRoot(_ value: AppTab) {
-        switch value {
-        case .challenges: challengesPath.removeAll()
-        case .teams: teamsPath.removeAll()
-        case .map: mapPath.removeAll()
-        case .profile: profilePath.removeAll()
-        }
-    }
 }
 
 extension View {
     func routeDestinations() -> some View {
         navigationDestination(for: Route.self) { route in
             switch route {
-            case .challenge(let id):
-                ChallengeDetailView(challengeID: id)
-            case .team(let id):
-                TeamDetailView(teamID: id)
-            case .person(let id):
-                PersonDetailView(personID: id)
+            case .card(let id):
+                CardDetailView(cardID: id)
+            case .profile(let id):
+                ProfileDetailView(profileID: id)
+            case .respondent(let response):
+                ProfileDetailView(profileID: response.userId, response: response)
             }
         }
     }
@@ -152,7 +197,7 @@ struct TabBar: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(tab.title)
-                    .accessibilityValue(tab == .profile && badge > 0 ? "Новых запросов: \(badge)" : "")
+                    .accessibilityValue(tab == .cabinet && badge > 0 ? "Откликов на ваши объявления: \(badge)" : "")
                     .accessibilityAddTraits(selection == tab ? .isSelected : [])
                 }
             }
@@ -181,7 +226,7 @@ struct TabBar: View {
                 Text(tab.number)
                     .font(Typo.mono(10, weight: .semibold))
                     .foregroundStyle(isOn ? Palette.signal : Palette.faint)
-                if tab == .profile && badge > 0 {
+                if tab == .cabinet && badge > 0 {
                     Text("\(badge)")
                         .font(Typo.mono(9, weight: .bold))
                         .foregroundStyle(Palette.onSignal)
@@ -207,7 +252,7 @@ struct TabBar: View {
             }
         }
         .overlay(alignment: .leading) {
-            if tab != .challenges {
+            if tab != .feed {
                 Hairline(vertical: true)
                     .padding(.vertical, 14)
             }
@@ -251,10 +296,12 @@ struct ToastCard: View {
                 Text(toast.title)
                     .font(Typo.headline)
                     .foregroundStyle(Palette.paper)
-                Text(toast.message)
-                    .font(Typo.footnote)
-                    .foregroundStyle(Palette.paper.opacity(0.78))
-                    .fixedSize(horizontal: false, vertical: true)
+                if !toast.message.isEmpty {
+                    Text(toast.message)
+                        .font(Typo.footnote)
+                        .foregroundStyle(Palette.paper.opacity(0.78))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .padding(.vertical, 12)
             Spacer(minLength: 0)

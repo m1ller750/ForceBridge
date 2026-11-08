@@ -4,3 +4,6 @@
 xcuserdata/
 DerivedData/
 ForceBridge.swiftpm/.swiftpm/xcode/
+preview/
+.env
+supabase/.temp/

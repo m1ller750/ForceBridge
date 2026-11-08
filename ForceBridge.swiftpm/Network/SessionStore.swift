@@ -3,15 +3,13 @@ import Security
 
 /// Сессия входа. Хранится в связке ключей (Keychain), а не в UserDefaults.
 struct AuthSession: Codable, Sendable {
-    var accessToken: String
-    var refreshToken: String
-    var expiresAt: Date
+    var token: String
     var userId: UUID
     var email: String
 }
 
 enum SessionStore {
-    private static let service = "app.forcebridge.session"
+    private static let service = "app.forcebridge.session.v2"
 
     static func load() -> AuthSession? {
         let query: [String: Any] = [

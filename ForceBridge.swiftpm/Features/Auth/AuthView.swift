@@ -52,10 +52,10 @@ struct AuthView: View {
                     Principle(number: "03", title: "ИИ", text: "Нейросеть раскладывает объявления по категориям и считает, насколько вы подходите.")
                 }
 
-                if !SupabaseConfig.isConfigured {
+                if !ServerConfig.isConfigured {
                     EmptyNote(
                         title: "Сервер не подключён",
-                        message: "Заполните App/SupabaseConfig.swift: адрес проекта Supabase и публичный ключ. Инструкция — в README."
+                        message: "Укажите адрес сервера в App/ServerConfig.swift. Инструкция — в README."
                     )
                 }
 
@@ -109,7 +109,7 @@ struct AuthView: View {
                 submit()
             }
             .buttonStyle(.signal)
-            .disabled(!canSubmit || working || !SupabaseConfig.isConfigured)
+            .disabled(!canSubmit || working || !ServerConfig.isConfigured)
             if mode == .register {
                 Text("После регистрации заполните паспорт участника: чем занимаетесь, возраст, город и контакт для связи.")
                     .font(Typo.footnote)

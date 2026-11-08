@@ -1,6 +1,6 @@
 import Foundation
 
-/// Кодирование JSON для Supabase: ключи в snake_case, даты Postgres.
+/// Кодирование JSON для API ForceBridge: ключи в camelCase, даты ISO 8601.
 enum JSONCoding {
     private static let isoFractional: ISO8601DateFormatter = {
         let formatter = ISO8601DateFormatter()
@@ -25,7 +25,6 @@ enum JSONCoding {
 
     static func makeDecoder() -> JSONDecoder {
         let decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
         decoder.dateDecodingStrategy = .custom { decoder in
             let container = try decoder.singleValueContainer()
             let string = try container.decode(String.self)
@@ -39,7 +38,6 @@ enum JSONCoding {
 
     static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
-        encoder.keyEncodingStrategy = .convertToSnakeCase
         encoder.dateEncodingStrategy = .custom { date, encoder in
             var container = encoder.singleValueContainer()
             try container.encode(isoFractional.string(from: date))
@@ -62,7 +60,7 @@ enum JSONCoding {
         return isoFractional.date(from: normalized) ?? isoPlain.date(from: normalized)
     }
 
-    /// Postgres отдаёт микросекунды; ISO8601DateFormatter надёжно понимает только миллисекунды.
+    /// Дробную часть секунд приводим к трём знакам: ISO8601DateFormatter надёжно понимает только миллисекунды.
     private static func trimFraction(_ string: String) -> String {
         guard let timeStart = string.firstIndex(of: "T"),
               let dot = string[timeStart...].firstIndex(of: ".") else { return string }

@@ -1,0 +1,14 @@
+{
+  "name": "forcebridge-api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "logs": "wrangler tail",
+    "seed": "node seed/demo.mjs"
+  },
+  "devDependencies": {
+    "wrangler": "^4"
+  }
+}

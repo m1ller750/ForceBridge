@@ -150,6 +150,15 @@ enum CardKind: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {
         case .join: return "JOIN"
         }
     }
+
+    /// В «Ищу команду» автор перечисляет, чем поможет сам, а не кого ищет.
+    var rolesLabel: String {
+        self == .join ? "Чем поможет команде" : "Кого ищут"
+    }
+
+    var rolesPrefix: String {
+        self == .join ? "Предлагает" : "Ищут"
+    }
 }
 
 enum CardFormat: String, CaseIterable, Codable, Identifiable, Hashable, Sendable {

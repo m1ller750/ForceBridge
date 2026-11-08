@@ -254,7 +254,7 @@ struct CardDetailView: View {
         VStack(spacing: 0) {
             Hairline()
             if !card.roles.isEmpty {
-                SpecRow(label: "Кого ищут", value: card.roles.joined(separator: ", "), accent: true)
+                SpecRow(label: card.kind.rolesLabel, value: card.roles.joined(separator: ", "), accent: true)
             }
             SpecRow(label: "Формат", value: card.placeText)
             if let deadline = card.deadline {

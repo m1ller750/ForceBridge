@@ -209,6 +209,28 @@ const people = [
   },
 ];
 
+// Профиль жюри заполнен как у настоящего участника, чтобы ИИ показал разброс совместимости:
+// высокий процент там, где ищут iOS-разработчика, и низкий у химиков и статистиков.
+const JURY_PROFILE = {
+  fullName: "Жюри Демо",
+  age: 20,
+  city: "Алматы",
+  occupation: "Студент, iOS-разработчик: SwiftUI и компьютерное зрение",
+  about:
+    "Демо-профиль участника для жюри: по нему ИИ считает процент совместимости. " +
+    "Поменяйте навыки или проекты в кабинете — проценты пересчитаются. " +
+    "Пишу приложения на SwiftUI, интересуюсь компьютерным зрением и медициной, люблю доводить проект до живого демо.",
+  skills: ["Swift", "SwiftUI", "UIKit", "HealthKit", "Core ML", "Vision", "Python", "Git"],
+  projects: [
+    "Трекер тренировок на SwiftUI и HealthKit, 300 пользователей в TestFlight",
+    "Распознавание текста на ценниках через Vision, школьный проект",
+  ],
+  achievements: [
+    "Финалист городского хакатона по мобильной разработке, 2025",
+    "Призёр регионального этапа олимпиады по программированию, 2024",
+  ],
+};
+
 const juryCards = [
   {
     kind: "teammate", title: "Ищу дизайнера и ML-инженера на конкурс социальных проектов",
@@ -248,17 +270,7 @@ for (const person of people) {
 
 if (JURY_PASSWORD) {
   const jury = await account(JURY_EMAIL, JURY_PASSWORD);
-  await call("PUT", "profile", jury.token, {
-    fullName: "Жюри Демо",
-    age: 30,
-    city: "Алматы",
-    occupation: "Демо-аккаунт для проверки ForceBridge",
-    about: "Этот аккаунт показывает весь сценарий: свои объявления, отклики на них и избранное.",
-    skills: ["Проверка проектов"],
-    projects: [],
-    achievements: [],
-    ...DEMO_CONTACT,
-  });
+  await call("PUT", "profile", jury.token, { ...JURY_PROFILE, ...DEMO_CONTACT });
   const cardIds = [];
   for (const card of juryCards) {
     const saved = await call("POST", "cards", jury.token, card);

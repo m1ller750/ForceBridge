@@ -1,7 +1,7 @@
 import SwiftUI
 
-// Команда изображается как ферма Уоррена: каждая роль — треугольная панель.
-// Закрашенная панель — роль закрыта участником, пунктирная — вакансия.
+// Фирменный мотив — ферма Уоррена: команда как конструкция из панелей.
+// Закрашенная панель — место занято, пунктирная — кого-то ещё не хватает.
 
 struct TrussGeometry {
     let count: Int
@@ -45,7 +45,6 @@ struct TrussGeometry {
         }
     }
 
-    /// Рама фермы: все рёбра треугольников.
     var framePath: Path {
         var path = Path()
         guard count > 0 else { return path }
@@ -56,7 +55,6 @@ struct TrussGeometry {
         return path
     }
 
-    /// Уникальные узлы фермы.
     var nodes: [CGPoint] {
         guard count > 0 else { return [] }
         var result: [CGPoint] = []
@@ -85,9 +83,9 @@ struct PolygonShape: Shape {
     }
 }
 
-/// Компактный глиф состава команды для списков.
+/// Компактный глиф для списков: сколько людей ищут и сколько уже есть.
 struct TrussGlyph: View {
-    /// true — роль закрыта, false — вакансия.
+    /// true — место занято, false — ищут человека.
     let states: [Bool]
     var lineWidth: CGFloat = 1
 
@@ -110,97 +108,70 @@ struct TrussGlyph: View {
                 }
             }
         }
-        .accessibilityElement()
-        .accessibilityLabel("Состав команды: занято \(states.filter { $0 }.count) из \(states.count)")
+        .accessibilityHidden(true)
     }
 }
 
-/// Большая интерактивная схема команды.
-struct TrussDiagram: View {
-    let slots: [Slot]
-    let memberInitials: (Slot) -> String?
-    @Binding var selection: UUID?
-    @State private var assembled = false
+/// Ферма, которая «собирается» при появлении: сначала рама, затем панели.
+struct AssemblingTruss: View {
+    var filled: [Bool] = [true, false, true, true, false, true, true]
+    @State private var progress: CGFloat = 0
+    @State private var panelsVisible = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { proxy in
-            let rect = CGRect(x: 10, y: 12, width: proxy.size.width - 20, height: proxy.size.height - 24)
-            let truss = TrussGeometry(count: slots.count, rect: rect)
+            let truss = TrussGeometry(
+                count: filled.count,
+                rect: CGRect(x: 5, y: 5, width: proxy.size.width - 10, height: proxy.size.height - 10)
+            )
             ZStack(alignment: .topLeading) {
-                truss.framePath
-                    .stroke(Palette.ink, lineWidth: 1.4)
-                ForEach(Array(slots.enumerated()), id: \.element.id) { index, slot in
-                    panel(index: index, slot: slot, truss: truss, size: proxy.size)
+                ForEach(0..<filled.count, id: \.self) { index in
+                    PolygonShape(points: truss.panel(index, shrink: 0.6))
+                        .fill(filled[index] ? Palette.ink : Palette.signal)
+                        .opacity(panelsVisible ? 1 : 0)
+                        .animation(.easeOut(duration: 0.35).delay(Double(index) * 0.07), value: panelsVisible)
                 }
+                truss.framePath
+                    .trim(from: 0, to: progress)
+                    .stroke(Palette.ink, style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                 ForEach(Array(truss.nodes.enumerated()), id: \.offset) { _, point in
                     Circle()
                         .fill(Palette.paper)
-                        .overlay { Circle().strokeBorder(Palette.ink, lineWidth: 1.4) }
-                        .frame(width: 9, height: 9)
+                        .overlay { Circle().strokeBorder(Palette.ink, lineWidth: 1.5) }
+                        .frame(width: 8, height: 8)
                         .position(point)
-                        .allowsHitTesting(false)
+                        .opacity(panelsVisible ? 1 : 0)
                 }
             }
         }
-        .onAppear {
-            assembled = true
-        }
-    }
-
-    @ViewBuilder
-    private func panel(index: Int, slot: Slot, truss: TrussGeometry, size: CGSize) -> some View {
-        let points = truss.panel(index, shrink: 0.78)
-        let center = truss.centroid(index)
-        let filled = slot.memberID != nil
-        let isSelected = selection == slot.id
-        let anchor = UnitPoint(
-            x: size.width > 0 ? center.x / size.width : 0.5,
-            y: size.height > 0 ? center.y / size.height : 0.5
-        )
-        ZStack(alignment: .topLeading) {
-            PolygonShape(points: points)
-                .fill(filled ? Palette.ink : Palette.signalSoft)
-            PolygonShape(points: points)
-                .stroke(
-                    isSelected ? Palette.signal : (filled ? Palette.ink : Palette.signal),
-                    style: StrokeStyle(lineWidth: isSelected ? 3 : 1.2, dash: filled || isSelected ? [] : [4, 3])
-                )
-            VStack(spacing: 1) {
-                Text(slot.role.code)
-                    .font(Typo.mono(11, weight: .bold))
-                if let initials = memberInitials(slot) {
-                    Text(initials)
-                        .font(Typo.mono(9, weight: .medium))
-                        .opacity(0.75)
-                } else {
-                    Text("—")
-                        .font(Typo.mono(9, weight: .medium))
-                }
+        .accessibilityHidden(true)
+        .task {
+            if reduceMotion {
+                progress = 1
+                panelsVisible = true
+                return
             }
-            .foregroundStyle(filled ? Palette.paper : Palette.signal)
-            .position(center)
-            .allowsHitTesting(false)
-        }
-        .contentShape(PolygonShape(points: truss.triangle(index)))
-        .onTapGesture {
-            selection = (selection == slot.id) ? nil : slot.id
-        }
-        .scaleEffect(assembled ? 1 : 0.4, anchor: anchor)
-        .opacity(assembled ? 1 : 0)
-        .animation(.spring(response: 0.5, dampingFraction: 0.72).delay(Double(index) * 0.07), value: assembled)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityText(slot))
-        .accessibilityAddTraits(.isButton)
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityAction {
-            selection = (selection == slot.id) ? nil : slot.id
+            withAnimation(.easeInOut(duration: 1.3)) {
+                progress = 1
+            }
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            panelsVisible = true
         }
     }
+}
 
-    private func accessibilityText(_ slot: Slot) -> String {
-        if slot.memberID != nil {
-            return "\(slot.role.title): занято"
+/// Индикатор работы ИИ: по ферме бежит оранжевая панель.
+struct TrussScanner: View {
+    var panels: Int = 9
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.12)) { timeline in
+            let step = reduceMotion ? 0 : Int(timeline.date.timeIntervalSinceReferenceDate / 0.12) % (panels * 2)
+            let active = step < panels ? step : panels * 2 - step - 1
+            TrussGlyph(states: (0..<panels).map { $0 != active })
         }
-        return "\(slot.role.title): вакансия"
+        .accessibilityHidden(true)
     }
 }

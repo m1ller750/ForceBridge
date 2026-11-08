@@ -25,6 +25,37 @@ enum Fmt {
         return formatter
     }()
 
+    private static let fullNumericFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = "dd.MM.yyyy"
+        return formatter
+    }()
+
+    private static let timeFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateFormat = "HH:mm"
+        return formatter
+    }()
+
+    /// «07.11.2026»
+    static func numericFull(_ date: Date) -> String {
+        fullNumericFormatter.string(from: date)
+    }
+
+    /// Дата создания для угла карточки: «сегодня 14:20», «вчера 09:05» или «07.11.2026».
+    static func created(_ date: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) {
+            return "сегодня " + timeFormatter.string(from: date)
+        }
+        if calendar.isDateInYesterday(date) {
+            return "вчера " + timeFormatter.string(from: date)
+        }
+        return numericFull(date)
+    }
+
     static let monthsShort = ["ЯНВ", "ФЕВ", "МАР", "АПР", "МАЙ", "ИЮН", "ИЮЛ", "АВГ", "СЕН", "ОКТ", "НОЯ", "ДЕК"]
     static let weekdaysShort = ["ВС", "ПН", "ВТ", "СР", "ЧТ", "ПТ", "СБ"]
 

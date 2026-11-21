@@ -53,7 +53,7 @@ Cloudflare Worker  — server/src/index.ts
 
 ---
 
-## Технологии (для формы заявки)
+## Технологии
 
 | Технология | Где используется |
 |---|---|
@@ -64,33 +64,6 @@ Cloudflare Worker  — server/src/index.ts
 | **Swift Playgrounds** | Проект в формате `.swiftpm`, собирается на iPad |
 | **Xcode** | Тот же пакет открывается в Xcode |
 | Другие | Cloudflare Workers и D1 (сервер и база данных), Groq API (ИИ), PhotosUI, QuickLook, Keychain (Security) |
-
----
-
-## Как запустить
-
-### Приложение
-
-Откройте `ForceBridge.swiftpm` в **Xcode 16+** или в **Swift Playgrounds 4.6+** и запустите на iPhone, iPad или в симуляторе (iOS 17 или новее). Адрес сервера уже указан в `App/ServerConfig.swift`.
-
-### Сервер (если разворачиваете свой)
-
-```bash
-cd server
-npm install
-npx wrangler login
-npx wrangler d1 create forcebridge      # вставьте database_id в wrangler.toml
-npx wrangler deploy
-npx wrangler secret put GROQ_API_KEY    # ключ Groq вводится в терминале и не попадает в код
-```
-
-Схема базы создаётся сама при первом запросе. Демо-объявления можно загрузить скриптом:
-
-```bash
-API=https://<ваш-адрес>.workers.dev node seed/demo.mjs
-```
-
-Ключ Groq не хранится ни в приложении, ни в репозитории — только в секретах Cloudflare.
 
 ---
 
